@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ミオ</title>
+<style>
+:root{--bg:#1b1a2e;--panel:#25233f;--me:#5b4fcf;--ai:#2f2c52;--text:#eceaff;--sub:#9d98c9;--accent:#ffb4a2}
+*{box-sizing:border-box}
+body{margin:0;height:100dvh;display:flex;flex-direction:column;background:var(--bg);color:var(--text);font:16px/1.6 "Hiragino Sans","Noto Sans JP",sans-serif}
+header{padding:14px 18px;background:var(--panel);display:flex;align-items:baseline;gap:10px}
+header b{font-size:18px}header span{color:var(--sub);font-size:13px}
+#log{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.msg{max-width:min(560px,88%);padding:10px 14px;border-radius:16px;white-space:pre-wrap;word-break:break-word}
+.me{align-self:flex-end;background:var(--me);border-bottom-right-radius:4px}
+.ai{align-self:flex-start;background:var(--ai);border-bottom-left-radius:4px}
+.msg img,.msg video{display:block;max-width:100%;border-radius:10px;margin-top:8px}
+.wait{color:var(--sub);font-size:14px;margin-top:8px}
+form{display:flex;gap:8px;padding:12px;background:var(--panel)}
+input{flex:1;padding:12px 14px;border-radius:12px;border:2px solid transparent;background:var(--bg);color:var(--text);font:inherit}
+input:focus-visible{outline:none;border-color:var(--accent)}
+button{padding:0 18px;border:0;border-radius:12px;background:var(--accent);color:#2a1a16;font:inherit;font-weight:700;cursor:pointer}
+button:disabled{opacity:.5}
+.hint{padding:0 14px 8px;color:var(--sub);font-size:12px;background:var(--panel)}
+</style>
+</head>
+<body>
+<header><b>ミオ</b><span>話す・絵を描く・動画を作る</span></header>
+<div id="log"></div>
+<div class="hint">/image 説明 で画像、/video 説明 で動画を直接作れます。会話で頼んでもOK。</div>
+<form id="f"><input id="t" placeholder="メッセージを入力" autocomplete="off"><button id="b">送信</button></form>
+<script>
+const log=document.getElementById('log'),f=document.getElementById('f'),t=document.getElementById('t'),b=document.getElementById('b');
+const history=[];
+function bubble(role,text){const d=document.createElement('div');d.className='msg '+role;if(text)d.append(text);log.append(d);log.scrollTop=log.scrollHeight;return d}
+async function api(url,body){const r=await fetch(url,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});if(!r.ok)throw new Error(await r.text());return r.json()}
+function showImage(box,url){const i=new Image();i.src=url;i.onload=()=>log.scrollTop=log.scrollHeight;box.append(i)}
+function showVideo(box,job){
+  const w=document.createElement('div');w.className='wait';w.textContent='動画を生成中…(数分かかります)';box.append(w);
+  const timer=setInterval(async()=>{
+    try{const s=await api('/api/video/'+job);
+      if(s.status==='completed'){clearInterval(timer);w.remove();const v=document.createElement('video');v.src=s.url;v.controls=true;v.autoplay=true;v.muted=true;v.loop=true;box.append(v)}
+      else if(s.progress!=null)w.textContent=`動画を生成中… ${s.progress}%`;
+    }catch(e){clearInterval(timer);w.textContent='動画の生成に失敗しました'}
+  },5000);
+}
+function showMedia(box,list){for(const m of list){m.type==='image'?showImage(box,m.url):showVideo(box,m.job)}}
+f.onsubmit=async e=>{
+  e.preventDefault();const text=t.value.trim();if(!text)return;t.value='';b.disabled=true;
+  bubble('me',text);const box=bubble('ai','…');
+  try{
+    if(text.startsWith('/image ')){box.textContent='描いてるよ…';const r=await api('/api/image',{prompt:text.slice(7)});box.textContent='できた!';showImage(box,r.url)}
+    else if(text.startsWith('/video ')){box.textContent='撮影開始!';const r=await api('/api/video',{prompt:text.slice(7)});showVideo(box,r.job)}
+    else{
+      history.push({role:'user',content:text});
+      const r=await api('/api/chat',{messages:history});
+      history.push({role:'assistant',content:r.text||'(作品を作りました)'});
+      box.textContent=r.text;showMedia(box,r.media);
+    }
+  }catch(err){box.textContent='エラー: '+err.message}
+  b.disabled=false;t.focus();
+};
+</script>
+</body>
+</html>
