@@ -1,0 +1,4 @@
+fastapi
+uvicorn
+anthropic
+openai>=1.99
